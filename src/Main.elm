@@ -1,10 +1,66 @@
 module Main exposing (..)
 
+import Array
 import Browser
-import Html exposing (Html, button, div, h1, input, label, span, text)
-import Html.Attributes exposing (class, disabled, hidden, placeholder, style, type_)
+import Html exposing (Html, button, div, input, pre, span, text)
+import Html.Attributes exposing (disabled, hidden, placeholder, style, type_)
 import Html.Events exposing (onClick, onInput)
+import Maybe exposing (withDefault)
 import Set exposing (Set)
+
+
+hangmanParts =
+    Array.fromList
+        [ """
+  +---+
+  |   |
+      |
+      |
+      |
+      |
+=========""", """
+  +---+
+  |   |
+  O   |
+      |
+      |
+      |
+=========""", """
+  +---+
+  |   |
+  O   |
+  |   |
+      |
+      |
+=========""", """
+  +---+
+  |   |
+  O   |
+ /|   |
+      |
+      |
+=========""", """
+  +---+
+  |   |
+  O   |
+ /|\\  |
+      |
+      |
+=========""", """
+  +---+
+  |   |
+  O   |
+ /|\\  |
+ /    |
+      |
+=========""", """
+  +---+
+  |   |
+  O   |
+ /|\\  |
+ / \\  |
+      |
+=========""" ]
 
 
 
@@ -94,7 +150,11 @@ view model =
             phraseMapped == phraseList && not (String.isEmpty model.phrase)
 
         hasLost =
-            Set.size mistakes > String.length model.phrase // 3
+            Set.size mistakes == (Array.length hangmanParts - 1)
+
+        hangmanText =
+            withDefault "" <|
+                Array.get (Set.size mistakes) hangmanParts
 
         mistakesHtml =
             mistakes
@@ -114,7 +174,11 @@ view model =
                     (\char ->
                         span [] [ text <| caseTransform char ]
                     )
-                |> div []
+                |> div
+                    [ style "font-size" <| String.fromInt (min (100 // String.length model.phrase) 20) ++ "vw"
+                    , style "letter-spacing" "0.2em"
+                    , style "white-space" "nowrap"
+                    ]
 
         buttonsHtml =
             "abcdefghijklmnopqrstuvwxyzæøå"
@@ -127,6 +191,17 @@ view model =
                             , style "width" "4rem"
                             , style "height" "4rem"
                             , style "margin" "0.5rem"
+                            , style "color"
+                                (if not <| Set.member char model.guesses then
+                                    "black"
+
+                                 else if Set.member char mistakes then
+                                    "red"
+
+                                 else
+                                    "lightgreen"
+                                )
+                            , hidden <| hasWon && not (Set.member char model.guesses)
                             ]
                             [ text <| caseTransform char ]
                     )
@@ -157,7 +232,7 @@ view model =
         switchStyle textCase =
             if textCase /= model.textCase then
                 [ style "color"
-                    "rgba(0,0,0,0.4)"
+                    "rgba(0,0,0,0.2)"
                 , style "cursor" "pointer"
                 , onClick (SetCase textCase)
                 ]
@@ -183,7 +258,6 @@ view model =
         [ style "text-align" "center"
         , style "font-family" "monospace"
         , style "font-size" "3rem"
-        , style "letter-spacing" "0.2em"
         , style "color"
             (if hasWon then
                 "lightgreen"
@@ -195,7 +269,8 @@ view model =
                 "black"
             )
         ]
-        [ h1 [] [ text <| caseTransform "hangman" ]
+        [ div [] [ text <| caseTransform "hangman" ]
+        , pre [ style "font-size" "0.2em" ] [ text hangmanText ]
         , switchHtml
         , inputHtml
         , phraseHtml
