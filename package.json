@@ -5,10 +5,12 @@
   "author": "Christian Ekrem <cekrem@pm.me>",
   "license": "MIT",
   "devDependencies": {
-    "elm-tooling": "^1.3.0"
+    "elm-tooling": "^1.3.0",
+    "http-server": "^0.12.3"
   },
   "scripts": {
     "postinstall": "elm-tooling install",
-    "build": "elm make src/Main.elm  --output=public_html/index.html --optimize"
+    "build": "elm make src/Main.elm  --output=public_html/index.html --optimize",
+    "start": "http-server public_html --port=$PORT"
   }
 }
