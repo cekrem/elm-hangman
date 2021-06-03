@@ -4,9 +4,9 @@ import Array
 import Ascii exposing (hangmanParts)
 import Browser
 import Browser.Events
-import Html exposing (Html, button, div, input, pre, span, text)
-import Html.Attributes exposing (disabled, hidden, placeholder, style, type_, value)
-import Html.Events exposing (onClick, onInput)
+import Html exposing (Html, button, div, pre, span, text)
+import Html.Attributes exposing (style)
+import Html.Events exposing (onClick)
 import Json.Decode as Decode
 import Maybe exposing (withDefault)
 import Set exposing (Set)
@@ -47,6 +47,7 @@ type KeyEvent
     = Char String
     | Enter
     | Backspace
+    | Space
 
 
 type Msg
@@ -73,6 +74,9 @@ update msg model =
                         Char char ->
                             ( { model | gameState = Playing { prevState | guesses = Set.insert char prevState.guesses } }, Cmd.none )
 
+                        Enter ->
+                            update Restart model
+
                         _ ->
                             update NoOp model
 
@@ -87,13 +91,29 @@ update msg model =
                         Backspace ->
                             ( { model | gameState = ChangePhrase <| String.dropRight 1 phrase }, Cmd.none )
 
+                        Space ->
+                            ( { model
+                                | gameState =
+                                    ChangePhrase ((phrase |> String.trim) ++ " ")
+                              }
+                            , Cmd.none
+                            )
+
         Start ->
             case model.gameState of
                 ChangePhrase phrase ->
-                    ( { model | gameState = Playing { phrase = phrase, guesses = Set.empty } }, Cmd.none )
+                    let
+                        trimmedPhrase =
+                            String.trim phrase
+                    in
+                    if trimmedPhrase |> String.isEmpty then
+                        update NoOp model
 
-                Playing record ->
-                    ( model, Cmd.none )
+                    else
+                        ( { model | gameState = Playing { phrase = phrase |> String.trim, guesses = Set.empty } }, Cmd.none )
+
+                Playing _ ->
+                    update NoOp model
 
         NoOp ->
             ( model, Cmd.none )
@@ -103,8 +123,15 @@ update msg model =
 ---- VIEW ----
 
 
-inputString string =
-    Input <| Char string
+buttonStyle =
+    [ style "height" "4rem"
+    , style "width" "4rem"
+    , style "margin" "1rem"
+    ]
+
+
+generateHangman content =
+    pre [ style "font-size" "0.4em" ] [ text content ]
 
 
 view : Model -> Html Msg
@@ -132,6 +159,9 @@ view model =
         switchHtml =
             div
                 [ style "font-size" "1rem"
+                , style "position" "fixed"
+                , style "top" "1rem"
+                , style "right" "1rem"
                 ]
                 [ span
                     (switchStyle Upper)
@@ -145,12 +175,23 @@ view model =
         hangmanTitle =
             div [] [ text <| caseTransform "hangman" ]
 
+        initialHangmanText =
+            withDefault ""
+                (Array.get 0 hangmanParts)
+
         rootDiv color content =
             div
                 [ style "text-align" "center"
                 , style "font-family" "monospace"
                 , style "font-size" "3rem"
                 , style "color" color
+                , style "display" "flex"
+                , style "flex-direction" "column"
+                , style "align-items" "center"
+                , style "justify-content" "space-between"
+                , style "box-sizing" "border-box"
+                , style "height" "100vh"
+                , style "padding" "10vw"
                 ]
                 (hangmanTitle :: switchHtml :: content)
     in
@@ -188,8 +229,8 @@ view model =
                     Set.size mistakes == (Array.length hangmanParts - 1)
 
                 hangmanText =
-                    withDefault "" <|
-                        Array.get (Set.size mistakes) hangmanParts
+                    withDefault initialHangmanText
+                        (Array.get (Set.size mistakes) hangmanParts)
 
                 mistakesHtml =
                     mistakes
@@ -217,10 +258,7 @@ view model =
 
                 restartButtonHtml =
                     button
-                        [ onClick Restart
-                        , style "height" "4rem"
-                        , style "width" "4rem"
-                        ]
+                        (onClick Restart :: buttonStyle)
                         [ text "↺" ]
             in
             rootDiv
@@ -233,31 +271,45 @@ view model =
                  else
                     "black"
                 )
-                [ pre [ style "font-size" "0.4em" ] [ text hangmanText ]
+                [ generateHangman hangmanText
                 , phraseHtml
-
-                --, buttonsHtml
                 , mistakesHtml
                 , restartButtonHtml
                 ]
 
         ChangePhrase phrase ->
+            let
+                emptyPhrase =
+                    String.isEmpty phrase
+            in
             rootDiv "black"
-                [ input
-                    [ placeholder "Enter phrase"
-                    , onInput inputString
-                    , value phrase
-                    , disabled True
-                    , type_ "password"
-                    , style "display" "block"
-                    , style "margin" "3rem auto"
+                [ generateHangman initialHangmanText
+                , div []
+                    [ text <| caseTransform "Type in new phrase:"
                     ]
-                    []
+                , div
+                    [ style "font-size" <|
+                        String.fromInt (min (80 // String.length phrase) 10)
+                            ++ "vw"
+                    , style "letter-spacing" "0.2em"
+                    , style "white-space" "nowrap"
+                    ]
+                    [ text
+                        (phrase
+                            |> String.split ""
+                            |> List.map
+                                (\char ->
+                                    if char == " " then
+                                        "|"
+
+                                    else
+                                        "_"
+                                )
+                            |> String.join ""
+                        )
+                    ]
                 , button
-                    [ onClick Start
-                    , style "height" "4rem"
-                    , style "width" "4rem"
-                    ]
+                    (onClick Start :: buttonStyle)
                     [ text "Start" ]
                 ]
 
@@ -266,13 +318,8 @@ view model =
 ---- PROGRAM ----
 
 
-type Key
-    = Character Char
-    | Control String
-
-
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Browser.Events.onKeyDown keyDecoder
 
 
@@ -285,7 +332,15 @@ toKey : String -> Msg
 toKey string =
     case String.uncons string of
         Just ( char, "" ) ->
-            Input <| Char <| String.fromChar char
+            let
+                charString =
+                    String.fromChar char
+            in
+            if charString == " " then
+                Input Space
+
+            else
+                Input <| Char charString
 
         _ ->
             if string == "Backspace" then
