@@ -22,8 +22,37 @@ type Case
 
 
 type GameState
-    = Playing { phrase : String, guesses : Set String }
+    = Playing Record
     | ChangePhrase String
+
+
+type alias Record =
+    { phrase : String, guesses : Set String }
+
+
+wrongChars : Record -> Set String
+wrongChars record =
+    record.guesses
+        |> Set.filter (\char -> char /= "")
+        |> Set.filter (\char -> not (String.contains char record.phrase))
+
+
+hasWon : Record -> Bool
+hasWon record =
+    record.phrase
+        |> String.split ""
+        |> List.all
+            (\char -> char == " " || Set.member char record.guesses)
+
+
+hasLost : Record -> Bool
+hasLost record =
+    Set.size (wrongChars record) == (Array.length hangmanParts - 1)
+
+
+gameOver : Record -> Bool
+gameOver record =
+    hasWon record || hasLost record
 
 
 type alias ModelOld =
@@ -36,7 +65,7 @@ type alias Model =
 
 init : ( Model, Cmd Msg )
 init =
-    ( { textCase = Lower, gameState = Playing { guesses = Set.empty, phrase = "Pappa er lur" } }, Cmd.none )
+    ( { textCase = Lower, gameState = ChangePhrase "" }, Cmd.none )
 
 
 
@@ -69,10 +98,14 @@ update msg model =
 
         Input keyEvent ->
             case model.gameState of
-                Playing prevState ->
+                Playing record ->
                     case keyEvent of
                         Char char ->
-                            ( { model | gameState = Playing { prevState | guesses = Set.insert char prevState.guesses } }, Cmd.none )
+                            if gameOver record then
+                                update NoOp model
+
+                            else
+                                ( { model | gameState = Playing { record | guesses = Set.insert char record.guesses } }, Cmd.none )
 
                         Enter ->
                             update Restart model
@@ -218,15 +251,7 @@ view model =
                             )
 
                 mistakes =
-                    record.guesses
-                        |> Set.filter (\char -> char /= "")
-                        |> Set.filter (\char -> not (String.contains char record.phrase))
-
-                hasWon =
-                    phraseMapped == phraseList && not (String.isEmpty record.phrase)
-
-                hasLost =
-                    Set.size mistakes == (Array.length hangmanParts - 1)
+                    wrongChars record
 
                 hangmanText =
                     withDefault initialHangmanText
@@ -262,10 +287,10 @@ view model =
                         [ text "↺" ]
             in
             rootDiv
-                (if hasWon then
+                (if hasWon record then
                     "green"
 
-                 else if hasLost then
+                 else if hasLost record then
                     "red"
 
                  else
@@ -279,23 +304,12 @@ view model =
 
         ChangePhrase phrase ->
             let
-                emptyPhrase =
-                    String.isEmpty phrase
-            in
-            rootDiv "black"
-                [ generateHangman initialHangmanText
-                , div []
-                    [ text <| caseTransform "Type in new phrase:"
-                    ]
-                , div
-                    [ style "font-size" <|
-                        String.fromInt (min (80 // String.length phrase) 10)
-                            ++ "vw"
-                    , style "letter-spacing" "0.2em"
-                    , style "white-space" "nowrap"
-                    ]
-                    [ text
-                        (phrase
+                renderedPhrase =
+                    if String.isEmpty phrase then
+                        "type in new phrase:"
+
+                    else
+                        phrase
                             |> String.split ""
                             |> List.map
                                 (\char ->
@@ -306,7 +320,17 @@ view model =
                                         "_"
                                 )
                             |> String.join ""
-                        )
+            in
+            rootDiv "black"
+                [ generateHangman initialHangmanText
+                , div
+                    [ style "font-size" <|
+                        String.fromInt (min (80 // String.length renderedPhrase) 10)
+                            ++ "vw"
+                    , style "letter-spacing" "0.2em"
+                    , style "white-space" "nowrap"
+                    ]
+                    [ text renderedPhrase
                     ]
                 , button
                     (onClick Start :: buttonStyle)
