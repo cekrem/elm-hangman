@@ -285,6 +285,16 @@ view model =
                     button
                         (onClick Restart :: buttonStyle)
                         [ text "↺" ]
+
+                gameOverText =
+                    if hasWon record then
+                        "du vant!"
+
+                    else if hasLost record then
+                        "du tapte!"
+
+                    else
+                        ""
             in
             rootDiv
                 (if hasWon record then
@@ -297,6 +307,7 @@ view model =
                     "black"
                 )
                 [ generateHangman hangmanText
+                , div [] [ text <| caseTransform gameOverText ]
                 , phraseHtml
                 , mistakesHtml
                 , restartButtonHtml
@@ -306,7 +317,7 @@ view model =
             let
                 renderedPhrase =
                     if String.isEmpty phrase then
-                        "type in new phrase:"
+                        "skriv inn ord/setning:"
 
                     else
                         phrase
