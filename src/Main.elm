@@ -5,10 +5,13 @@ import Ascii exposing (hangmanParts)
 import Browser
 import Browser.Events
 import Html exposing (Html, button, div, pre, span, text)
-import Html.Attributes exposing (style)
+import Html.Attributes exposing (disabled, style)
 import Html.Events exposing (onClick)
-import Json.Decode as Decode
+import Http
+import Json.Decode as Decode exposing (Decoder, int, string)
+import Json.Decode.Pipeline exposing (required)
 import Maybe exposing (withDefault)
+import Random
 import Set exposing (Set)
 
 
@@ -55,17 +58,18 @@ gameOver record =
     hasWon record || hasLost record
 
 
-type alias ModelOld =
-    { guesses : Set String, phrase : String, textCase : Case }
-
-
 type alias Model =
-    { textCase : Case, gameState : GameState }
+    { textCase : Case, loading : Bool, gameState : GameState }
+
+
+initialModel : Model
+initialModel =
+    { textCase = Lower, loading = False, gameState = ChangePhrase "" }
 
 
 init : ( Model, Cmd Msg )
 init =
-    ( { textCase = Lower, gameState = ChangePhrase "" }, Cmd.none )
+    ( initialModel, Cmd.none )
 
 
 
@@ -85,6 +89,35 @@ type Msg
     | Restart
     | Start
     | NoOp
+    | Fetch
+    | FetchSeed Int
+    | Fetched (Result Http.Error Post)
+
+
+type alias Post =
+    { id : Int
+    , title : String
+    }
+
+
+phraseUrl : String
+phraseUrl =
+    "https://jsonplaceholder.typicode.com/posts/"
+
+
+postDecoder : Decoder Post
+postDecoder =
+    Decode.succeed Post
+        |> required "id" int
+        |> required "title" string
+
+
+fetchPhrase : Int -> Cmd Msg
+fetchPhrase postNum =
+    Http.get
+        { url = phraseUrl ++ String.fromInt postNum
+        , expect = Http.expectJson Fetched postDecoder
+        }
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -125,12 +158,16 @@ update msg model =
                             ( { model | gameState = ChangePhrase <| String.dropRight 1 phrase }, Cmd.none )
 
                         Space ->
-                            ( { model
-                                | gameState =
-                                    ChangePhrase ((phrase |> String.trim) ++ " ")
-                              }
-                            , Cmd.none
-                            )
+                            if phrase == "" then
+                                update NoOp model
+
+                            else
+                                ( { model
+                                    | gameState =
+                                        ChangePhrase ((phrase |> String.trim) ++ " ")
+                                  }
+                                , Cmd.none
+                                )
 
         Start ->
             case model.gameState of
@@ -151,9 +188,31 @@ update msg model =
         NoOp ->
             ( model, Cmd.none )
 
+        Fetch ->
+            ( { model | loading = True }, Random.generate FetchSeed (Random.int 1 100) )
+
+        FetchSeed seed ->
+            ( model, fetchPhrase seed )
+
+        Fetched (Ok post) ->
+            ( { model | loading = False, gameState = Playing { phrase = post.title, guesses = Set.empty } }, Cmd.none )
+
+        Fetched (Err httpError) ->
+            let
+                _ =
+                    Debug.log "http error" httpError
+            in
+            ( initialModel, Cmd.none )
+
 
 
 ---- VIEW ----
+
+
+buttonGroupStyle =
+    [ style "display" "flex"
+    , style "justify-content" "center"
+    ]
 
 
 buttonStyle =
@@ -212,7 +271,7 @@ view model =
             withDefault ""
                 (Array.get 0 hangmanParts)
 
-        rootDiv color content =
+        rootDiv loading color content =
             div
                 [ style "text-align" "center"
                 , style "font-family" "monospace"
@@ -225,6 +284,13 @@ view model =
                 , style "box-sizing" "border-box"
                 , style "height" "100vh"
                 , style "padding" "10vw"
+                , style "transition" "linear opacity 0.1s"
+                , style "opacity" <|
+                    if loading then
+                        "0.2"
+
+                    else
+                        "1"
                 ]
                 (hangmanTitle :: switchHtml :: content)
     in
@@ -296,7 +362,7 @@ view model =
                     else
                         ""
             in
-            rootDiv
+            rootDiv model.loading
                 (if hasWon record then
                     "green"
 
@@ -332,7 +398,8 @@ view model =
                                 )
                             |> String.join ""
             in
-            rootDiv "black"
+            rootDiv model.loading
+                "black"
                 [ generateHangman initialHangmanText
                 , div
                     [ style "font-size" <|
@@ -343,9 +410,14 @@ view model =
                     ]
                     [ text renderedPhrase
                     ]
-                , button
-                    (onClick Start :: buttonStyle)
-                    [ text "Start" ]
+                , div buttonGroupStyle
+                    [ button
+                        (disabled (String.isEmpty phrase) :: (onClick Start :: buttonStyle))
+                        [ text "Start" ]
+                    , button
+                        (onClick Fetch :: buttonStyle)
+                        [ text "Generer setning" ]
+                    ]
                 ]
 
 
